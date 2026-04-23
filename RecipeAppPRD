@@ -1,0 +1,57 @@
+1. Executive Summary
+Product Vision: A digital sous-chef that bridges the gap between social media inspiration and kitchen execution. The app allows users to aggregate recipes from Instagram, TikTok, and web links into a standardized personal cookbook.
+Target Audience: Home cooks and fitness enthusiasts who prioritize nutrition but struggle with the manual effort of organizing fragmented digital content.
+Success Metrics (KPIs): * Parsing Accuracy: % of ingredients correctly identified with quantity/unit.
+Conversion Rate: % of saved recipes that are added to a "Menu."
+Retention: Daily Active Users (DAU) during peak "planning" days (e.g., Sundays).
+2. Problem Statement & Goals
+The Problem: The "execution bar" for social media recipes is too high. Viral trends and meal-prep ideas are lost in saved folders or screenshots. Manually transcribing ingredients from a video caption into a shopping list is a point of friction that prevents users from actually cooking the meals they save.
+The Goals: Deliver a high-accuracy parsing engine that converts unstructured social media data into a standardized recipe format (Ingredients, Quantities, Instructions) and provides a "Menu Builder" to aggregate these recipes into a consolidated grocery list.
+Out of Scope: Social networking/sharing features and direct-to-cart grocery delivery integrations (reserved for V2).
+3. Functional Requirements
+Authentication: Secure Email-based Sign-up/Login.
+The "Omni-Parser" (Scraping Engine):
+Multi-Channel Input: Support for URL paste and mobile "Share Sheet" integration (Instagram/TikTok/Browser).
+Extraction Logic: Utilize OCR for text-in-video, transcript parsing for spoken instructions, caption scraping for ingredient lists, and pictures uploaded from personal files
+Standardization: Automatically map data into three fields: Ingredient, Quantity, and Unit (e.g., [Chicken], [2], [lbs]).
+Recipe Management:
+Standardized Cookbook: Automated folder organization and custom tagging.
+The "Verification" UI: A mandatory post-scrape review screen where users can manually override or correct parsing errors.
+Source Persistence: Every recipe must retain a deep link to the original source video/post.
+Personal recipes: The ability to create/edit new recipes 
+Menu & Grocery Logic:
+The Menu Builder: A "staging" area where users select multiple recipes to be cooked in a specific timeframe.
+Smart Aggregation: The app must combine identical ingredients (e.g., 1 onion from Recipe A + 1 onion from Recipe B = "2 onions" on the shopping list).
+Pantry Toggle: Ability to "check off" items already owned before exporting the final list.
+4. User Experience (UX) & Design
+User Flows: 1. Social App → Share to App → Review/Edit Scrape → Save to Cookbook.
+2. Cookbook → Select Recipes → Add to Menu → Generate/Export Grocery List.
+Design Principles: Minimalist and high-contrast. Dark Mode is the primary priority to ensure legibility in varied kitchen lighting.
+Accessibility: Large-format "Cooking Mode" (one instruction at a time) to prevent the need for constant screen interaction with messy hands.
+5. Technical Constraints & Security
+Platform: Cross-platform development (e.g., Flutter or React Native) to ensure simultaneous iOS and Android parity.
+Handling Blockers: Implement a "Web View" fallback. If a site’s robots.txt prevents automated scraping, the UI must allow the user to manually highlight and "snip" text into the parser.
+Data Privacy: A "Local-First" data architecture. User-scraped recipes are stored on-device for speed and offline access, with encrypted cloud backups for account recovery.
+6. User Stories
+As a...
+I want to...
+So that...
+Home Cook
+Share an Instagram reel directly to the app
+I don't have to manually type out ingredients from a caption.
+Meal Prepper
+Select 3-5 recipes for my "Weekly Menu"
+I get a consolidated grocery list that sums up all the ingredients I need.
+Fitness Enthusiast
+Edit the parsed quantities of a recipe
+I can scale the meal to meet my specific macro-nutrient or caloric goals.
+Busy Parent
+Toggle off ingredients I already have in my pantry
+My shopping list only contains the items I actually need to buy.
+Foodie
+Tag recipes by "Cuisine" or "Cook Time"
+I can find the right recipe quickly based on how much time I have.
+
+
+Internal Wireframe Note:
+The most critical wireframe will be the "Scrape Review" screen. Since AI parsing can vary in accuracy, the user needs a frictionless way to tap an ingredient and fix a quantity before the recipe is finalized in their "Cookbook."
