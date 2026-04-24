@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const { initDb } = require('./db/database');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -18,10 +19,11 @@ app.use('/api/profile',        require('./routes/profile'));
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
 
-// Catch-all error handler — must have 4 params so Express recognises it as an error handler.
 app.use((err, _req, res, _next) => {
   console.error(err);
   res.status(500).json({ error: err.message });
 });
 
-app.listen(PORT, () => console.log(`Mise API running on http://localhost:${PORT}`));
+initDb()
+  .then(() => app.listen(PORT, () => console.log(`Mise API running on http://localhost:${PORT}`)))
+  .catch(err => { console.error('DB init failed:', err); process.exit(1); });

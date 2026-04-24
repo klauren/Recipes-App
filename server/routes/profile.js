@@ -1,25 +1,25 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../db/database');
+const { db } = require('../db/database');
 
 // ── GET /api/profile ──────────────────────────────────────────────────────────
-// Returns the single user profile row augmented with live counts so the
-// Profile screen doesn't need separate requests for each stat.
-router.get('/', (req, res) => {
-  const profile      = db.prepare('SELECT * FROM user_profile WHERE id = 1').get();
-  const totalRecipes = db.prepare('SELECT COUNT(*) as c FROM recipes').get().c;
-  const savedRecipes = db.prepare('SELECT COUNT(*) as c FROM recipes WHERE is_saved = 1').get().c;
-  const mealsPlanned = db.prepare('SELECT COUNT(*) as c FROM meal_plans').get().c;
-  res.json({ ...profile, totalRecipes, savedRecipes, mealsPlanned });
+router.get('/', async (req, res) => {
+  const [{ rows: [profile] }, { rows: [total] }, { rows: [saved] }, { rows: [meals] }] = await Promise.all([
+    db.execute('SELECT * FROM user_profile WHERE id = 1'),
+    db.execute('SELECT COUNT(*) as c FROM recipes'),
+    db.execute('SELECT COUNT(*) as c FROM recipes WHERE is_saved = 1'),
+    db.execute('SELECT COUNT(*) as c FROM meal_plans'),
+  ]);
+  res.json({ ...profile, totalRecipes: Number(total.c), savedRecipes: Number(saved.c), mealsPlanned: Number(meals.c) });
 });
 
 // ── PATCH /api/profile ────────────────────────────────────────────────────────
-// Updates only the fields provided; other fields are left unchanged.
-router.patch('/', (req, res) => {
+router.patch('/', async (req, res) => {
   const { name, username } = req.body;
-  if (name     !== undefined) db.prepare('UPDATE user_profile SET name     = ? WHERE id = 1').run(name);
-  if (username !== undefined) db.prepare('UPDATE user_profile SET username = ? WHERE id = 1').run(username);
-  res.json(db.prepare('SELECT * FROM user_profile WHERE id = 1').get());
+  if (name     !== undefined) await db.execute({ sql: 'UPDATE user_profile SET name     = ? WHERE id = 1', args: [name] });
+  if (username !== undefined) await db.execute({ sql: 'UPDATE user_profile SET username = ? WHERE id = 1', args: [username] });
+  const { rows: [profile] } = await db.execute('SELECT * FROM user_profile WHERE id = 1');
+  res.json(profile);
 });
 
 module.exports = router;
