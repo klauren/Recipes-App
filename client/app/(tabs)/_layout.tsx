@@ -11,11 +11,14 @@ export default function TabsLayout() {
         tabBarStyle: { display: 'none' },
       }}
     >
-      <Tabs.Screen name="index" options={{ title: 'Home' }} />
-      <Tabs.Screen name="saved" options={{ title: 'Saved' }} />
-      <Tabs.Screen name="add" options={{ title: 'Add' }} />
-      <Tabs.Screen name="cart" options={{ title: 'Cart' }} />
+      <Tabs.Screen name="index"   options={{ title: 'Home' }} />
+      <Tabs.Screen name="library" options={{ title: 'Library' }} />
+      <Tabs.Screen name="build"   options={{ title: 'Build' }} />
+      <Tabs.Screen name="cart"    options={{ title: 'Cart' }} />
       <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
+      {/* Kept in the tab group so expo-router can resolve the route, but not shown in the tab bar */}
+      <Tabs.Screen name="saved" options={{ title: 'Saved', href: null }} />
+      <Tabs.Screen name="add"   options={{ title: 'Add',   href: null }} />
     </Tabs>
   );
 }

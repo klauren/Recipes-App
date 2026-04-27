@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { db } = require('../db/database');
 const { isoWeekStart, isoWeekEnd } = require('../utils');
+const Anthropic = require('@anthropic-ai/sdk');
 
 // ── GET /api/meals?week=YYYY-MM-DD ────────────────────────────────────────────
 router.get('/', async (req, res) => {
@@ -91,22 +92,67 @@ router.post('/generate', async (req, res) => {
   });
   const planned = new Set(existing.map(m => `${m.date}|${m.meal_type}`));
 
-  const { rows: recipes } = await db.execute('SELECT id, servings FROM recipes WHERE is_saved = 1');
+  const { rows: recipes } = await db.execute(
+    'SELECT id, title, category, difficulty, prep_time, cook_time, servings FROM recipes WHERE is_saved = 1'
+  );
   if (!recipes.length) return res.status(422).json({ error: 'No saved recipes to assign' });
 
-  const pick = () => recipes[Math.floor(Math.random() * recipes.length)];
-  const statements = [];
-
+  // Build list of empty slots
+  const emptySlots = [];
+  const DAY_NAMES = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
   for (let i = 0; i < 7; i++) {
     const d = new Date(ws); d.setDate(d.getDate() + i);
     const dateStr = d.toISOString().split('T')[0];
     for (const mt of ['Breakfast','Lunch','Dinner']) {
-      if (!planned.has(`${dateStr}|${mt}`)) {
-        const r = pick();
-        statements.push({ sql: 'INSERT INTO meal_plans (recipe_id,date,meal_type,servings) VALUES (?,?,?,?)', args: [r.id, dateStr, mt, r.servings || 2] });
-      }
+      if (!planned.has(`${dateStr}|${mt}`)) emptySlots.push({ date: dateStr, dayName: DAY_NAMES[i], meal_type: mt });
     }
   }
+
+  if (!emptySlots.length) return res.json({ weekStart: ws, added: 0 });
+
+  let assignments = [];
+
+  // Try AI suggestions first
+  if (process.env.ANTHROPIC_API_KEY) {
+    try {
+      const client = new Anthropic();
+      const recipeList = recipes
+        .map(r => `ID:${r.id} "${r.title}" [${r.category}, ${r.difficulty}, ${(r.prep_time || 0) + (r.cook_time || 0)}min]`)
+        .join('\n');
+      const slotList = emptySlots
+        .map(s => `${s.date} (${s.dayName}) ${s.meal_type}`)
+        .join('\n');
+
+      const message = await client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 600,
+        system: 'You are a meal planner. Assign recipes to meal slots optimizing for nutritional balance, variety across the week, and appropriate meal timing (lighter breakfasts, heartier dinners). Avoid repeating the same recipe more than twice. Respond with a JSON array only, no explanation.',
+        messages: [{
+          role: 'user',
+          content: `Assign recipe IDs to these empty meal slots:\n${slotList}\n\nAvailable recipes:\n${recipeList}\n\nReturn JSON array: [{"date":"YYYY-MM-DD","meal_type":"Breakfast|Lunch|Dinner","recipe_id":N}]`,
+        }],
+      });
+
+      const raw = message.content[0].text.replace(/```[a-z]*\n?/gi, '').trim();
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const validIds = new Set(recipes.map(r => Number(r.id)));
+        assignments = parsed.filter(a => a.date && a.meal_type && validIds.has(Number(a.recipe_id)));
+      }
+    } catch { /* fall through to random */ }
+  }
+
+  // Fallback: random selection
+  if (!assignments.length) {
+    const pick = () => recipes[Math.floor(Math.random() * recipes.length)];
+    assignments = emptySlots.map(slot => ({ date: slot.date, meal_type: slot.meal_type, recipe_id: pick().id }));
+  }
+
+  const recipeMap = Object.fromEntries(recipes.map(r => [Number(r.id), r]));
+  const statements = assignments.map(a => ({
+    sql: 'INSERT INTO meal_plans (recipe_id,date,meal_type,servings) VALUES (?,?,?,?)',
+    args: [Number(a.recipe_id), a.date, a.meal_type, recipeMap[Number(a.recipe_id)]?.servings || 2],
+  }));
 
   await db.batch(statements, 'write');
   res.json({ weekStart: ws, added: statements.length });

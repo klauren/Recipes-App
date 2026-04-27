@@ -134,17 +134,17 @@ export default function ProfileScreen() {
           <Text style={styles.sectionTitle}>Quick Access</Text>
           <View style={styles.quickRow}>
             {/* router.navigate switches tabs in-place; router.push would stack them. */}
-            <TouchableOpacity style={styles.quickCard} onPress={() => router.navigate('/saved')}>
-              <Ionicons name="heart-outline" size={24} color={Colors.accent} />
-              <Text style={styles.quickLabel}>Saved</Text>
+            <TouchableOpacity style={styles.quickCard} onPress={() => router.navigate('/library')}>
+              <Ionicons name="book-outline" size={24} color={Colors.accent} />
+              <Text style={styles.quickLabel}>Library</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.quickCard} onPress={() => router.navigate('/add')}>
-              <Ionicons name="add-circle-outline" size={24} color={Colors.accent} />
-              <Text style={styles.quickLabel}>Add Recipe</Text>
+            <TouchableOpacity style={styles.quickCard} onPress={() => router.navigate('/build')}>
+              <Ionicons name="calendar-outline" size={24} color={Colors.accent} />
+              <Text style={styles.quickLabel}>Plan</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.quickCard} onPress={() => router.navigate('/cart')}>
-              <Ionicons name="cart-outline" size={24} color={Colors.accent} />
-              <Text style={styles.quickLabel}>Cart</Text>
+              <Ionicons name="bag-outline" size={24} color={Colors.accent} />
+              <Text style={styles.quickLabel}>Groceries</Text>
             </TouchableOpacity>
           </View>
         </View>

@@ -2,6 +2,21 @@ const express = require('express');
 const router = express.Router();
 const { db } = require('../db/database');
 const { isoWeekStart, isoWeekEnd } = require('../utils');
+const Anthropic = require('@anthropic-ai/sdk');
+
+const VALID_CATEGORIES = ['Produce', 'Dairy', 'Meat & Fish', 'Bakery', 'Pantry', 'Drinks', 'Other'];
+
+// Regex fallback categorizer used when AI is unavailable
+function categorizeFallback(name) {
+  const n = name.toLowerCase();
+  if (/\b(milk|cream|butter|cheese|yogurt|egg)\b/.test(n))                                                                   return 'Dairy';
+  if (/\b(chicken|beef|pork|lamb|salmon|tuna|fish|shrimp|turkey|bacon|sausage)\b/.test(n))                                   return 'Meat & Fish';
+  if (/\b(tomato|onion|garlic|pepper|carrot|celery|spinach|basil|herb|lemon|lime|ginger|scallion|cilantro|lettuce|avocado|mushroom|zucchini|broccoli|potato|kale|parsley|thyme|rosemary|mint|dill)\b/.test(n)) return 'Produce';
+  if (/\b(flour|sugar|rice|pasta|bread|oil|vinegar|salt|sauce|spice|cumin|stock|broth|miso|soy|honey|maple|vanilla|baking|cocoa)\b/.test(n)) return 'Pantry';
+  if (/\b(wine|beer|juice|water|broth|stock)\b/.test(n))                                                                     return 'Drinks';
+  if (/\b(bread|roll|bagel|croissant|bun)\b/.test(n))                                                                        return 'Bakery';
+  return 'Other';
+}
 
 // ── GET /api/cart?week=YYYY-MM-DD ─────────────────────────────────────────────
 router.get('/', async (req, res) => {
@@ -59,41 +74,90 @@ router.post('/generate', async (req, res) => {
   const ws = isoWeekStart(req.query.week || req.body.week);
   const we = (() => { const d = new Date(ws); d.setDate(d.getDate() + 6); return d.toISOString().split('T')[0]; })();
 
-  const categorize = (name) => {
-    const n = name.toLowerCase();
-    if (/\b(milk|cream|butter|cheese|yogurt|egg)\b/.test(n))                                                                   return 'Dairy';
-    if (/\b(chicken|beef|pork|lamb|salmon|fish|shrimp|turkey)\b/.test(n))                                                      return 'Meat & Fish';
-    if (/\b(tomato|onion|garlic|pepper|carrot|celery|spinach|basil|herb|lemon|lime|ginger|scallion|cilantro|lettuce|avocado|mushroom|zucchini|broccoli|potato)\b/.test(n)) return 'Produce';
-    if (/\b(flour|sugar|rice|pasta|bread|oil|vinegar|salt|sauce|spice|cumin|stock|broth|miso|soy)\b/.test(n))                  return 'Pantry';
-    if (/\b(wine|beer|juice|water)\b/.test(n))                                                                                 return 'Drinks';
-    return 'Other';
-  };
+  // Collect all ingredients from this week's meal plan (read-only phase, no transaction yet)
+  const { rows: meals } = await db.execute({
+    sql: `SELECT mp.recipe_id, mp.servings, r.title
+          FROM meal_plans mp JOIN recipes r ON r.id = mp.recipe_id
+          WHERE mp.date BETWEEN ? AND ?`,
+    args: [ws, we],
+  });
 
+  const rawIngredients = [];
+  for (const meal of meals) {
+    const { rows: ings } = await db.execute({
+      sql: 'SELECT * FROM ingredients WHERE recipe_id = ?',
+      args: [meal.recipe_id],
+    });
+    for (const ing of ings) {
+      rawIngredients.push({ name: ing.name, amount: ing.amount || '', unit: ing.unit || '', source: meal.title });
+    }
+  }
+
+  // Run AI DEDUPE + CATEGORIZE if available
+  let processedItems = null;
+  if (rawIngredients.length > 0 && process.env.ANTHROPIC_API_KEY) {
+    try {
+      const client = new Anthropic();
+      const ingList = rawIngredients
+        .map((i, idx) => `${idx + 1}. ${i.amount} ${i.unit} ${i.name} (from: ${i.source})`.trim())
+        .join('\n');
+
+      const message = await client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1200,
+        system: `You are a smart grocery list processor. Given a raw ingredient list from multiple recipes:
+1. DEDUPLICATE: Merge ingredients that refer to the same thing (e.g. "garlic" and "minced garlic" → "garlic"; "cilantro" and "coriander" → "cilantro/coriander"). Sum quantities where possible, otherwise use the larger quantity or list both.
+2. CATEGORIZE: Assign each merged ingredient to exactly one of these store sections: ${VALID_CATEGORIES.join(', ')}.
+Respond with valid JSON only, no explanation.`,
+        messages: [{
+          role: 'user',
+          content: `Process this ingredient list:\n${ingList}\n\nReturn JSON array: [{"name":"ingredient name","amount":"combined amount","unit":"unit","category":"one of the valid categories","source_recipe":"recipe name or multiple names"}]`,
+        }],
+      });
+
+      const raw = message.content[0].text.replace(/```[a-z]*\n?/gi, '').trim();
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        processedItems = parsed
+          .filter(i => i.name)
+          .map(i => ({
+            name:          String(i.name).trim(),
+            amount:        String(i.amount || '').trim(),
+            unit:          String(i.unit   || '').trim(),
+            category:      VALID_CATEGORIES.includes(i.category) ? i.category : categorizeFallback(i.name),
+            source_recipe: String(i.source_recipe || '').trim(),
+          }));
+      }
+    } catch { /* fall through to regex fallback */ }
+  }
+
+  // Fallback: regex categorize, no deduplication
+  if (!processedItems) {
+    processedItems = rawIngredients.map(i => ({
+      name:          i.name,
+      amount:        i.amount,
+      unit:          i.unit,
+      category:      categorizeFallback(i.name),
+      source_recipe: i.source,
+    }));
+  }
+
+  // Write phase: clear unchecked items, insert processed list
   const tx = await db.transaction('write');
   try {
     await tx.execute({ sql: 'DELETE FROM cart_items WHERE week_start = ? AND is_checked = 0', args: [ws] });
 
-    const { rows: meals } = await tx.execute({
-      sql: `SELECT mp.recipe_id, mp.servings, r.title
-            FROM meal_plans mp JOIN recipes r ON r.id = mp.recipe_id
-            WHERE mp.date BETWEEN ? AND ?`,
-      args: [ws, we],
-    });
-
     const inserted = [];
-    for (const meal of meals) {
-      const { rows: ings } = await tx.execute({
-        sql: 'SELECT * FROM ingredients WHERE recipe_id = ?',
-        args: [meal.recipe_id],
+    for (const item of processedItems) {
+      const r = await tx.execute({
+        sql: 'INSERT INTO cart_items (name,amount,unit,category,week_start,source_recipe) VALUES (?,?,?,?,?,?)',
+        args: [item.name, item.amount, item.unit, item.category, ws, item.source_recipe],
       });
-      for (const ing of ings) {
-        const cat = categorize(ing.name);
-        const r = await tx.execute({
-          sql: 'INSERT INTO cart_items (name,amount,unit,category,week_start,source_recipe) VALUES (?,?,?,?,?,?)',
-          args: [ing.name, ing.amount, ing.unit, cat, ws, meal.title],
-        });
-        inserted.push({ id: Number(r.lastInsertRowid), name: ing.name, amount: ing.amount, unit: ing.unit, category: cat, is_checked: 0, week_start: ws, source_recipe: meal.title });
-      }
+      inserted.push({
+        id: Number(r.lastInsertRowid),
+        name: item.name, amount: item.amount, unit: item.unit,
+        category: item.category, is_checked: 0, week_start: ws, source_recipe: item.source_recipe,
+      });
     }
 
     await tx.commit();

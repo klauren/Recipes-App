@@ -6,9 +6,9 @@ import { Ionicons } from '@expo/vector-icons';
 
 const TABS: { route: string; label: string; icon: keyof typeof Ionicons.glyphMap; iconActive: keyof typeof Ionicons.glyphMap }[] = [
   { route: 'index',   label: 'HOME',    icon: 'home-outline',          iconActive: 'home' },
-  { route: 'saved',   label: 'SAVED',   icon: 'heart-outline',         iconActive: 'heart' },
-  { route: 'add',     label: 'ADD',     icon: 'add-circle-outline',    iconActive: 'add-circle' },
-  { route: 'cart',    label: 'CART',    icon: 'cart-outline',          iconActive: 'cart' },
+  { route: 'library', label: 'LIBRARY', icon: 'book-outline',          iconActive: 'book' },
+  { route: 'build',   label: 'BUILD',   icon: 'calendar-outline',      iconActive: 'calendar' },
+  { route: 'cart',    label: 'CART',    icon: 'bag-outline',           iconActive: 'bag' },
   { route: 'profile', label: 'PROFILE', icon: 'person-outline',        iconActive: 'person' },
 ];
 

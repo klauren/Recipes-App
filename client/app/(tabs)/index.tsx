@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
-import { mealApi, profileApi, recipeApi, type Meal, type Profile, type Recipe } from '../../services/api';
+import { cartApi, mealApi, profileApi, recipeApi, type Meal, type Profile, type Recipe } from '../../services/api';
 import RecipeCard from '../../components/RecipeCard';
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -15,27 +15,29 @@ const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct'
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const [meals,   setMeals]   = useState<Meal[]>([]);
-  const [recipes, setRecipes] = useState<Recipe[]>([]);
-  const [stats,   setStats]   = useState({ mealsPlanned: 0, uniqueRecipes: 0, totalCookMins: 0 });
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [meals,        setMeals]        = useState<Meal[]>([]);
+  const [recipes,      setRecipes]      = useState<Recipe[]>([]);
+  const [stats,        setStats]        = useState({ mealsPlanned: 0, uniqueRecipes: 0, totalCookMins: 0 });
+  const [groceryCount, setGroceryCount] = useState(0);
+  const [profile,      setProfile]      = useState<Profile | null>(null);
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  // Stable date string used as the week anchor — won't change within a session.
   const todayStr = new Date().toISOString().split('T')[0];
 
   const load = useCallback(async () => {
     try {
-      const [m, r, s, p] = await Promise.all([
+      const [m, r, s, p, cart] = await Promise.all([
         mealApi.list(todayStr),
         recipeApi.list(),
         mealApi.stats(todayStr),
         profileApi.get(),
+        cartApi.get(todayStr),
       ]);
       setMeals(m);
       setRecipes(r.slice(0, 6));
       setStats(s);
       setProfile(p);
+      setGroceryCount(cart.items.length);
     } catch {}
   }, [todayStr]);
 
@@ -72,7 +74,7 @@ export default function HomeScreen() {
           <Text style={styles.tagline}>Your week at a glance</Text>
         </View>
         <View style={styles.headerRight}>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => router.navigate('/saved')}>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => router.navigate('/library')}>
             <Ionicons name="search-outline" size={20} color={Colors.fgPrimary} />
           </TouchableOpacity>
           {/* router.navigate switches to the Profile tab; push would stack it. */}
@@ -93,17 +95,17 @@ export default function HomeScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHead}>
             <Text style={styles.sectionTitle}>This Week's Plan</Text>
-            <TouchableOpacity onPress={() => router.push('/menu-builder')}>
-              <Text style={styles.seeAll}>View All</Text>
+            <TouchableOpacity onPress={() => router.navigate('/build')}>
+              <Text style={styles.seeAll}>Full Plan</Text>
             </TouchableOpacity>
           </View>
 
           {/* Stats row */}
           <View style={styles.statsRow}>
             {[
-              { label: 'Meals', value: stats.mealsPlanned },
-              { label: 'Recipes', value: stats.uniqueRecipes },
-              { label: 'Cook time', value: stats.totalCookMins > 0 ? `${Math.round(stats.totalCookMins/60)}h` : '0h' },
+              { label: 'Meals Set', value: stats.mealsPlanned },
+              { label: 'Today', value: todayMeals.length },
+              { label: 'Groceries', value: groceryCount },
             ].map(s => (
               <View key={s.label} style={styles.statCard}>
                 <Text style={styles.statValue}>{s.value}</Text>
@@ -123,7 +125,7 @@ export default function HomeScreen() {
             <View style={styles.emptyDay}>
               <Ionicons name="restaurant-outline" size={24} color={Colors.fgMuted} />
               <Text style={styles.emptyDayText}>Nothing planned today</Text>
-              <TouchableOpacity onPress={() => router.navigate('/add')}>
+              <TouchableOpacity onPress={() => router.navigate('/build')}>
                 <Text style={styles.emptyDayLink}>+ Add a meal</Text>
               </TouchableOpacity>
             </View>
@@ -159,8 +161,14 @@ export default function HomeScreen() {
         {/* Recently Added */}
         <View style={styles.section}>
           <View style={styles.sectionHead}>
-            <Text style={styles.sectionTitle}>Recently Added</Text>
-            <TouchableOpacity onPress={() => router.navigate('/saved')}>
+            <View style={styles.sectionTitleRow}>
+              <Text style={styles.sectionTitle}>Recently Added</Text>
+              <View style={styles.aiBadge}>
+                <Ionicons name="sparkles" size={9} color="#fff" />
+                <Text style={styles.aiBadgeText}>AI RECOMMEND</Text>
+              </View>
+            </View>
+            <TouchableOpacity onPress={() => router.navigate('/library')}>
               <Text style={styles.seeAll}>See all</Text>
             </TouchableOpacity>
           </View>
@@ -215,7 +223,18 @@ const styles = StyleSheet.create({
   scroll: { padding: 20, gap: 24, paddingBottom: 12 },
   section: { gap: 14 },
   sectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   sectionTitle: { fontFamily: 'PlayfairDisplay_700Bold', fontSize: 20, color: Colors.fgPrimary },
+  aiBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#6B3FA0',
+    borderRadius: 99,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  aiBadgeText: { fontFamily: 'Inter_700Bold', fontSize: 7, color: '#fff', letterSpacing: 0.3 },
   seeAll: { fontFamily: 'Inter_600SemiBold', fontSize: 12, color: Colors.accent },
   statsRow: { flexDirection: 'row', gap: 10 },
   statCard: {
