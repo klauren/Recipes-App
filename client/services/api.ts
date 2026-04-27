@@ -1,10 +1,11 @@
 import { Platform } from 'react-native';
 
-// Android emulators route 10.0.2.2 → the host machine's localhost.
-// iOS simulators share the host network, so localhost works directly.
-const BASE = Platform.OS === 'android'
-  ? 'http://10.0.2.2:3001/api'
-  : 'http://localhost:3001/api';
+const BASE = process.env.EXPO_PUBLIC_API_URL
+  ? `${process.env.EXPO_PUBLIC_API_URL}/api`
+  // Android emulators route 10.0.2.2 → the host machine's localhost.
+  : Platform.OS === 'android'
+    ? 'http://10.0.2.2:3001/api'
+    : 'http://localhost:3001/api';
 
 /**
  * Thin fetch wrapper that throws on non-2xx responses, forwarding the
