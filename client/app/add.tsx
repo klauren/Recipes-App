@@ -78,14 +78,6 @@ export default function AddRecipeScreen() {
   const updateInstruction = (i: number, val: string) =>
     setInstructions(prev => prev.map((ins, idx) => idx === i ? { body: val } : ins));
 
-  const resetForm = () => {
-    setTitle(''); setDescription(''); setPrepTime(''); setCookTime('');
-    setServings('4'); setDifficulty('Easy'); setCategory('Dinner');
-    setIngredients([{ amount: '', unit: '', name: '' }]);
-    setInstructions([{ body: '' }]);
-    setImportUrl('');
-  };
-
   const handleSave = async () => {
     if (!title.trim()) return Alert.alert('Required', 'Recipe name is required');
     setSaving(true);
@@ -101,10 +93,8 @@ export default function AddRecipeScreen() {
         ingredients: ingredients.filter(i => i.name.trim()),
         instructions: instructions.filter(i => i.body.trim()),
       });
-      Alert.alert('Saved!', `"${recipe.title}" added to your recipes.`, [
-        { text: 'View Recipe', onPress: () => router.replace(`/recipe/${recipe.id}`) },
-        { text: 'Add Another', onPress: resetForm },
-      ]);
+      // Replace add screen with recipe detail — Back from recipe returns to library.
+      router.replace(`/recipe/${recipe.id}`);
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {
