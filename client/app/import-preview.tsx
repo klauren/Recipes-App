@@ -51,8 +51,8 @@ export default function ImportPreviewScreen() {
   };
 
   const handleEdit = () => {
-    // Navigate to Add Recipe pre-filled — serialise back as params.
-    router.replace({ pathname: '/(tabs)/add', params: { prefill: rawData } });
+    // Replace this screen with Add Recipe pre-filled so Back from Add goes to the caller.
+    router.replace({ pathname: '/add', params: { prefill: rawData } });
   };
 
   if (!preview) {

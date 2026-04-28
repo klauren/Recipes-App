@@ -28,6 +28,10 @@ export default function RootLayout() {
       <StatusBar style="dark" backgroundColor={Colors.surfacePrimary} />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="add"              options={{ presentation: 'card', animation: 'slide_from_right' }} />
+        <Stack.Screen name="import-preview"   options={{ presentation: 'card', animation: 'slide_from_right' }} />
+        <Stack.Screen name="add-meal"         options={{ presentation: 'card', animation: 'slide_from_right' }} />
+        <Stack.Screen name="menu-builder"     options={{ presentation: 'card', animation: 'slide_from_right' }} />
         <Stack.Screen name="recipe/[id]"      options={{ presentation: 'card', animation: 'slide_from_right' }} />
         <Stack.Screen name="edit-recipe/[id]" options={{ presentation: 'card', animation: 'slide_from_right' }} />
       </Stack>

@@ -6,8 +6,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors } from '../../constants/Colors';
-import { recipeApi, type Ingredient, type Instruction } from '../../services/api';
+import { Colors } from '../constants/Colors';
+import { recipeApi, type Ingredient, type Instruction } from '../services/api';
 
 const DIFFICULTIES = ['Easy', 'Medium', 'Hard'] as const;
 const CATEGORIES = ['Breakfast', 'Lunch', 'Dinner', 'Snack', 'Dessert', 'Other'];
@@ -78,11 +78,18 @@ export default function AddRecipeScreen() {
   const updateInstruction = (i: number, val: string) =>
     setInstructions(prev => prev.map((ins, idx) => idx === i ? { body: val } : ins));
 
+  const resetForm = () => {
+    setTitle(''); setDescription(''); setPrepTime(''); setCookTime('');
+    setServings('4'); setDifficulty('Easy'); setCategory('Dinner');
+    setIngredients([{ amount: '', unit: '', name: '' }]);
+    setInstructions([{ body: '' }]);
+    setImportUrl('');
+  };
+
   const handleSave = async () => {
     if (!title.trim()) return Alert.alert('Required', 'Recipe name is required');
     setSaving(true);
     try {
-      // Strip rows the user left completely blank before sending to the server.
       const recipe = await recipeApi.create({
         title: title.trim(),
         description: description.trim(),
@@ -95,14 +102,8 @@ export default function AddRecipeScreen() {
         instructions: instructions.filter(i => i.body.trim()),
       });
       Alert.alert('Saved!', `"${recipe.title}" added to your recipes.`, [
-        { text: 'View Recipe', onPress: () => router.push(`/recipe/${recipe.id}`) },
-        { text: 'Add Another', onPress: () => {
-          setTitle(''); setDescription(''); setPrepTime(''); setCookTime('');
-          setServings('4'); setDifficulty('Easy'); setCategory('Dinner');
-          setIngredients([{ amount: '', unit: '', name: '' }]);
-          setInstructions([{ body: '' }]);
-          setImportUrl('');
-        }},
+        { text: 'View Recipe', onPress: () => router.replace(`/recipe/${recipe.id}`) },
+        { text: 'Add Another', onPress: resetForm },
       ]);
     } catch (e: any) {
       Alert.alert('Error', e.message);
@@ -119,12 +120,11 @@ export default function AddRecipeScreen() {
       <View style={[styles.screen, { paddingTop: insets.top }]}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.headTitle}>Add Recipe</Text>
-          <TouchableOpacity onPress={() => {
-            setTitle(''); setDescription(''); setImportUrl('');
-          }}>
-            <Text style={styles.cancel}>Cancel</Text>
+          <TouchableOpacity onPress={() => router.back()} hitSlop={8}>
+            <Ionicons name="arrow-back" size={22} color={Colors.fgPrimary} />
           </TouchableOpacity>
+          <Text style={styles.headTitle}>Add Recipe</Text>
+          <View style={{ width: 22 }} />
         </View>
 
         <ScrollView contentContainerStyle={styles.form} showsVerticalScrollIndicator={false}>
@@ -348,13 +348,18 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.surfacePrimary },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingBottom: 8,
+    gap: 12,
   },
-  headTitle: { fontFamily: 'PlayfairDisplay_700Bold', fontSize: 26, color: Colors.fgPrimary },
-  cancel: { fontFamily: 'Inter_400Regular', fontSize: 14, color: Colors.fgMuted },
+  headTitle: {
+    flex: 1,
+    fontFamily: 'PlayfairDisplay_700Bold',
+    fontSize: 26,
+    color: Colors.fgPrimary,
+    textAlign: 'center',
+  },
   form: { paddingHorizontal: 20, paddingBottom: 40, gap: 20 },
   section: { gap: 12 },
   sectionTitle: { fontFamily: 'PlayfairDisplay_700Bold', fontSize: 20, color: Colors.fgPrimary },
