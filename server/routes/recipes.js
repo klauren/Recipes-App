@@ -227,7 +227,79 @@ function formatMicrodata(m, url, sourceName) {
   };
 }
 
-const AI_CONTENT_MAX_CHARS = 6000;
+const AI_CONTENT_MAX_CHARS = 8000;
+
+// ── Platform-specific content extractors ─────────────────────────────────────
+
+/**
+ * YouTube stores the full video description inside a `var ytInitialData = {...}`
+ * script tag. The description is completely absent from the visible HTML —
+ * stripping scripts would leave Claude with nothing useful.
+ */
+function extractYouTubeDescription($) {
+  let description = '';
+  $('script').each((_, el) => {
+    if (description) return;
+    const src = $(el).html() || '';
+    if (!src.includes('ytInitialData')) return;
+    try {
+      const match = src.match(/(?:var\s+)?ytInitialData\s*=\s*(\{[\s\S]*?\});(?:\s*\/\/|<\/script>|\n)/);
+      if (!match) return;
+      const data = JSON.parse(match[1]);
+      // Walk the standard watch-page structure
+      const contents =
+        data?.contents?.twoColumnWatchNextResults?.results?.results?.contents ?? [];
+      for (const item of contents) {
+        const runs = item?.videoSecondaryInfoRenderer?.description?.runs;
+        if (Array.isArray(runs)) {
+          description = runs.map(r => r.text || '').join('');
+          break;
+        }
+      }
+      // Fallback path used on some YouTube layouts
+      if (!description) {
+        const attrdesc = data?.engagementPanels
+          ?.flatMap(p => p?.engagementPanelSectionListRenderer?.content
+            ?.structuredDescriptionContentRenderer?.items ?? [])
+          ?.find(i => i?.videoDescriptionHeaderRenderer || i?.expandableVideoDescriptionBodyRenderer);
+        const runs2 = attrdesc?.expandableVideoDescriptionBodyRenderer?.descriptionBodyText?.runs;
+        if (Array.isArray(runs2)) description = runs2.map(r => r.text || '').join('');
+      }
+    } catch { /* malformed ytInitialData — ignore */ }
+  });
+  return description;
+}
+
+/**
+ * TikTok and Instagram caption text is in og:description (often the full caption)
+ * and the title is in og:title. Their page bodies are JavaScript-rendered so
+ * standard HTML scraping returns nothing useful.
+ */
+function extractSocialCaption($) {
+  return (
+    $('meta[property="og:description"]').attr('content') ||
+    $('meta[name="description"]').attr('content') ||
+    ''
+  );
+}
+
+/**
+ * Returns platform-specific recipe content when the URL is a known video/social
+ * platform, otherwise returns null so the caller falls back to generic scraping.
+ */
+function extractPlatformContent($, url) {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, '');
+    if (host === 'youtube.com' || host === 'youtu.be' || host.endsWith('.youtube.com')) {
+      return extractYouTubeDescription($) || null;
+    }
+    if (host === 'tiktok.com' || host.endsWith('.tiktok.com') ||
+        host === 'instagram.com' || host.endsWith('.instagram.com')) {
+      return extractSocialCaption($) || null;
+    }
+  } catch { /* invalid URL */ }
+  return null;
+}
 
 function stripToContentText($) {
   $('nav,header,footer,aside,noscript,script,style,[role="navigation"],[role="banner"],[role="contentinfo"],[class*="nav"],[class*="sidebar"],[class*="footer"],[class*="header"],[class*="comment"],[class*="related"],[class*="newsletter"],[class*="cookie"],[class*=" ad"],[id*="sidebar"],[id*="comment"]').remove();
@@ -242,18 +314,26 @@ const EXTRACTION_SCHEMA = JSON.stringify({
 });
 
 async function extractWithAI($, url, sourceName) {
-  const metaTitle = $('h1').first().text().trim() || $('title').text().trim();
-  const metaDesc  = $('meta[name="description"]').attr('content') || '';
+  const metaTitle = $('meta[property="og:title"]').attr('content') || $('h1').first().text().trim() || $('title').text().trim();
+  const metaDesc  = $('meta[property="og:description"]').attr('content') || $('meta[name="description"]').attr('content') || '';
   const metaImage = $('meta[property="og:image"]').attr('content') || '';
   const fallback  = { title:metaTitle, description:metaDesc, image_url:metaImage, source_url:url, source_name:sourceName, prep_time:0, cook_time:0, servings:4, difficulty:'Medium', category:'Other', ingredients:[], instructions:[] };
   if (!process.env.ANTHROPIC_API_KEY) return fallback;
   try {
     const client  = new Anthropic();
-    const content = stripToContentText($);
+
+    // Use platform-specific extraction first; fall back to generic HTML scraping.
+    const platformContent = extractPlatformContent($, url);
+    const content = platformContent
+      ? platformContent.slice(0, AI_CONTENT_MAX_CHARS)
+      : stripToContentText($);
+
+    const contentType = platformContent ? 'video description / social caption' : 'web page text';
+
     const message = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001', max_tokens: 900,
-      system: 'You extract recipe data from web page text. Respond with valid JSON only, no explanation.',
-      messages: [{ role: 'user', content: `Fill this JSON schema with data from the recipe text below. Use empty string or 0 for unknown fields. Times are in minutes.\n\nSCHEMA: ${EXTRACTION_SCHEMA}\n\nTEXT:\n${content}` }],
+      model: 'claude-haiku-4-5-20251001', max_tokens: 1200,
+      system: `You extract recipe data from ${contentType}. The content may be a YouTube video description, TikTok caption, or web page. Extract all ingredients and steps you can find. Respond with valid JSON only, no explanation.`,
+      messages: [{ role: 'user', content: `Fill this JSON schema with recipe data from the content below. Use empty string or 0 for unknown fields. Times are in minutes.\n\nSCHEMA: ${EXTRACTION_SCHEMA}\n\nCONTENT:\n${content}` }],
     });
     const raw  = message.content[0].text.replace(/```[a-z]*\n?/gi,'').trim();
     const data = JSON.parse(raw);
