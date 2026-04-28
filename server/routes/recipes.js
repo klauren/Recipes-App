@@ -232,40 +232,26 @@ const AI_CONTENT_MAX_CHARS = 8000;
 // ── Platform-specific content extractors ─────────────────────────────────────
 
 /**
- * YouTube stores the full video description inside a `var ytInitialData = {...}`
- * script tag. The description is completely absent from the visible HTML —
- * stripping scripts would leave Claude with nothing useful.
+ * YouTube embeds `ytInitialPlayerResponse` in a script tag which contains
+ * `videoDetails.shortDescription` — the full video description as a JSON string.
+ * Targeting that specific field avoids parsing the entire multi-MB ytInitialData blob.
  */
 function extractYouTubeDescription($) {
   let description = '';
   $('script').each((_, el) => {
     if (description) return;
     const src = $(el).html() || '';
-    if (!src.includes('ytInitialData')) return;
+    if (!src.includes('shortDescription')) return;
+    const match = src.match(/"shortDescription":"((?:[^"\\]|\\.)*)"/);
+    if (!match) return;
     try {
-      const match = src.match(/(?:var\s+)?ytInitialData\s*=\s*(\{[\s\S]*?\});(?:\s*\/\/|<\/script>|\n)/);
-      if (!match) return;
-      const data = JSON.parse(match[1]);
-      // Walk the standard watch-page structure
-      const contents =
-        data?.contents?.twoColumnWatchNextResults?.results?.results?.contents ?? [];
-      for (const item of contents) {
-        const runs = item?.videoSecondaryInfoRenderer?.description?.runs;
-        if (Array.isArray(runs)) {
-          description = runs.map(r => r.text || '').join('');
-          break;
-        }
-      }
-      // Fallback path used on some YouTube layouts
-      if (!description) {
-        const attrdesc = data?.engagementPanels
-          ?.flatMap(p => p?.engagementPanelSectionListRenderer?.content
-            ?.structuredDescriptionContentRenderer?.items ?? [])
-          ?.find(i => i?.videoDescriptionHeaderRenderer || i?.expandableVideoDescriptionBodyRenderer);
-        const runs2 = attrdesc?.expandableVideoDescriptionBodyRenderer?.descriptionBodyText?.runs;
-        if (Array.isArray(runs2)) description = runs2.map(r => r.text || '').join('');
-      }
-    } catch { /* malformed ytInitialData — ignore */ }
+      // Re-parse as a JSON string value to correctly handle all escape sequences.
+      description = JSON.parse('"' + match[1] + '"');
+    } catch {
+      description = match[1]
+        .replace(/\\n/g, '\n').replace(/\\t/g, '\t')
+        .replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+    }
   });
   return description;
 }
