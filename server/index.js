@@ -21,10 +21,7 @@ app.use(async (_req, res, next) => {
   catch { res.status(503).json({ error: 'Database unavailable — check TURSO env vars.' }); }
 });
 
-// IMPORTANT: /api/recipes/import must be mounted before /api/recipes, otherwise
-// Express matches the literal string "import" as the :id param in GET /api/recipes/:id.
-app.use('/api/recipes/import', require('./routes/recipes'));
-app.use('/api/recipes',        require('./routes/recipes'));
+app.use('/api/recipes', require('./routes/recipes'));
 app.use('/api/meals',          require('./routes/meals'));
 app.use('/api/cart',           require('./routes/cart'));
 app.use('/api/profile',        require('./routes/profile'));
