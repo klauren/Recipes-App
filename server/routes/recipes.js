@@ -122,8 +122,19 @@ router.post('/import', async (req, res) => {
   if (!url) return res.status(400).json({ error: 'url is required' });
   try {
     const { data: html } = await axios.get(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MiseRecipeBot/1.0)' },
-      timeout: 10000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Upgrade-Insecure-Requests': '1',
+      },
+      timeout: 15000,
+      maxRedirects: 5,
     });
     const $          = cheerio.load(html);
     const sourceName = new URL(url).hostname.replace('www.', '');
@@ -166,16 +177,29 @@ function parseYield(raw) {
   return parseInt(str) || 4;
 }
 
+function isRecipeType(type) {
+  if (!type) return false;
+  const t = Array.isArray(type) ? type : [type];
+  return t.some(v => v === 'Recipe' || String(v).endsWith('/Recipe'));
+}
+
 function extractJsonLd($) {
   let found = null;
   $('script[type="application/ld+json"]').each((_, el) => {
     if (found) return;
     try {
       const json = JSON.parse($(el).html());
-      const candidate = Array.isArray(json)
-        ? json.find(x => x['@type'] === 'Recipe')
-        : json['@type'] === 'Recipe' ? json : json['@graph']?.find(x => x['@type'] === 'Recipe');
-      if (candidate) found = candidate;
+      // Normalise to a flat list of nodes covering top-level, arrays, and @graph
+      const nodes = Array.isArray(json) ? json : json['@graph'] ? [json, ...json['@graph']] : [json];
+      // 1. Direct @type: Recipe (or ["Recipe", ...])
+      const direct = nodes.find(x => isRecipeType(x['@type']));
+      if (direct) { found = direct; return; }
+      // 2. Wrapped in mainEntity (e.g. WebPage → Recipe)
+      for (const node of nodes) {
+        if (node.mainEntity && isRecipeType(node.mainEntity['@type'])) {
+          found = node.mainEntity; return;
+        }
+      }
     } catch { /* malformed JSON-LD — skip */ }
   });
   return found;
@@ -191,9 +215,15 @@ function formatJsonLd(r, url, sourceName) {
     servings: parseYield(r.recipeYield), difficulty: 'Medium',
     category: r.recipeCategory || 'Other',
     ingredients:  (r.recipeIngredient || []).map(mapIngredient),
-    instructions: (Array.isArray(r.recipeInstructions) ? r.recipeInstructions : [])
-      .flatMap(s => s['@type'] === 'HowToSection' ? (s.itemListElement || []).map(mapStep) : [mapStep(s)])
-      .filter(s => s.body),
+    instructions: (() => {
+      const raw = r.recipeInstructions;
+      if (!raw) return [];
+      // Some sites emit a single plain string instead of an array
+      if (typeof raw === 'string') return raw.split(/\n+/).map(s => s.trim()).filter(Boolean).map(s => ({ body: s }));
+      return (Array.isArray(raw) ? raw : [raw])
+        .flatMap(s => s['@type'] === 'HowToSection' ? (s.itemListElement || []).map(mapStep) : [mapStep(s)])
+        .filter(s => s.body);
+    })(),
   };
 }
 
